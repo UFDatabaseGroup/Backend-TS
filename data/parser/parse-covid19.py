@@ -5,6 +5,7 @@ import os
 import os.path as path
 import datetime
 import cx_Oracle as oracledb
+import concurrent.futures
 from typing import Set
 
 DATA_PATH = path.join(
@@ -155,56 +156,63 @@ def enum_countries():
     print(countries_list)
     return countries_list
 
-def upload_database():
+def upload_database_all():
     connection = oracledb.connect(
         user=os.environ.get('DBUSER'),
         password=os.environ.get('DBPASSWORD'),
-        dsn='oracle.cise.ufl.edu/orcl'
+        dsn='oracle.cise.ufl.edu/orcl',
+        threaded=True
     )
-    cursor = connection.cursor()
-    for file in data_files:
-        print('read data', path.basename(file))
-        data = read_file(file)
-        print('iter tuples')
-        tuples = []
-        for row in data.itertuples():
-            tuples.append((
-                row.timestamp,
-                row.timestamp_id,
-                row.admin2,
-                row.state,
-                row.country,
-                row.latitude,
-                row.longitude,
-                row.confirmed,
-                row.deaths,
-                row.recovered,
-                row.active,
-                row.incidence,
-                row.case_fatality_ratio
-            ))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
+        for file in data_files:
+            cursor = connection.cursor()
+            executor.submit(upload_database, cursor, file)
+        
+        
+def upload_database(cursor, file: str):
+    file_basename = path.basename(file)
+    print(file_basename, 'read data')
+    data = read_file(file)
+    print(file_basename, 'iter tuples')
+    tuples = []
+    for row in data.itertuples():
+        tuples.append((
+            row.timestamp,
+            row.timestamp_id,
+            row.admin2,
+            row.state,
+            row.country,
+            row.latitude,
+            row.longitude,
+            row.confirmed,
+            row.deaths,
+            row.recovered,
+            row.active,
+            row.incidence,
+            row.case_fatality_ratio
+        ))
 
-        print('insert')
-        try:
-            cursor.executemany("""
-                insert into covid_data
-                    (timestamp, timestamp_id, admin2, state, country, latitude,
-                    longitude, confirmed, deaths, recovered, active, incidence,
-                    case_fatality_ratio)
-                values
-                    (:1, :2, :3, :4, :5, :6, :7, :8, :9, :10, :11, :12, :13)
-            """, tuples)
-            print('rows inserted', cursor.rowcount)
-        except Exception as ex:
-            # WHY
-            print(ex)
-            print('offending file:', file)
-            exit(1)
+    print(file_basename, 'insert')
+    try:
+        cursor.executemany("""
+            insert into covid_data
+                (timestamp, timestamp_id, admin2, state, country, latitude,
+                longitude, confirmed, deaths, recovered, active, incidence,
+                case_fatality_ratio)
+            values
+                (:1, :2, :3, :4, :5, :6, :7, :8, :9, :10, :11, :12, :13)
+        """, tuples)
+        print(file_basename, 'rows inserted', cursor.rowcount)
+    except Exception as ex:
+        # WHY
+        print(ex)
+        print('offending file:', file)
+        exit(1)
 
-        print('commit')
-        cursor.execute('commit')
+    print(file_basename, 'commit')
+    cursor.execute('commit')
 
-upload_database()
+upload_database_all()
 
 """ figure out which countries are bad
 all_countries = set(enum_countries())
