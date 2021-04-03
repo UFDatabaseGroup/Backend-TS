@@ -13,9 +13,9 @@ create table COVID_DATA (
     case_fatality_ratio number,
     admin2 varchar(64),
     state varchar(64),
-    country varchar(64),
-    timestamp_id number,
-    timestamp date,
+    country varchar(64) not null,
+    timestamp_id number not null,
+    timestamp date not null,
     latitude number,
     longitude number
     -- add constraints later
@@ -34,7 +34,7 @@ create table TIMESTAMP (
 );
 
 create table COUNTRY (
-    name varchar(30) not null,
+    name varchar(64) not null,
     population number,
     yearly_change number,
     net_change number,
@@ -47,10 +47,12 @@ create table COUNTRY (
 );
 
 create table UNEMPLOYMENT (
-    id number not null,
     unemployment_time_stamp date,
     value number,
-    country_name varchar(30),
+    country_name varchar(64)
     -- constraint country_fk foreign key (country_name) references COUNTRY(name),
-    primary key (id)
 );
+create index unemployment_country_index on UNEMPLOYMENT(country_name);
+
+alter table COVID_DATA add constraint timestamp_fk foreign key (timestamp_id) references TIMESTAMP(timestamp_id);
+alter table COVID_DATA add constraint country_fk foreign key (country) references COUNTRY(name);

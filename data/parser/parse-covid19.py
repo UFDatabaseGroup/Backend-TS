@@ -72,7 +72,6 @@ COUNTRY_MAPPING = {
     'Puerto Rico': 'United States',
     'Guam': 'United States',
     'Czechia': 'Czech Republic',
-    'Republic of Ireland': 'Ireland',
     'North Ireland': 'United Kingdom',
     'UK': 'United Kingdom',
     'Faroe Islands': 'Denmark',
@@ -95,7 +94,8 @@ COUNTRY_MAPPING = {
     'Vatican City': 'Italy', # this disappeared and idk where it went
     'East Timor': 'Timor-Leste',
     'Ivory Coast': "Cote d'Ivoire",
-    'Cape Verde': 'Cabo Verde'
+    'Cape Verde': 'Cabo Verde',
+    'Cruise Ship': 'Others' # it was reclassified later
 }
 
 # figure out columns
