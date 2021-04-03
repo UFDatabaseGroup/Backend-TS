@@ -44,6 +44,59 @@ RESULT_COLUMNS = set([
     'deaths', 'recovered', 'active', 'incidence', 'case_fatality_ratio'
 ])
 
+COUNTRY_MAPPING = {
+    ' Azerbaijan': 'Azerbaijan',
+    'Bahamas, The': 'Bahamas',
+    'Mainland China': 'China',
+    'Hong Kong': 'China',
+    'Hong Kong SAR': 'China',
+    'Macau': 'China',
+    'Macau SAR': 'China',
+    'Iran (Islamic Republic of)': 'Iran',
+    'Taiwan*': 'Taiwan',
+    'Taipei and environs': 'Tawian',
+    'occupied Palestinian territory': 'State of Palestine', # not too sure about this one
+    'West Bank and Gaza': 'State of Palestine',
+    'Palestine': 'State of Palestine',
+    'Republic of Ireland': 'Ireland',
+    'Republic of Korea': 'South Korea',
+    'Korea, South': 'South Korea',
+    'Republic of Moldova': 'Moldova',
+    'Republic of the Congo': 'Congo (Brazzaville)', # yes, there are in fact two Congos
+    'Russian Federation': 'Russia',
+    'Viet Nam': 'Vietnam',
+    'Curacao': 'Netherlands', # counted as part of netherlands
+    'Aruba': 'Netherlands',
+    'US': 'United States',
+    'Puerto Rico': 'United States',
+    'Guam': 'United States',
+    'Czechia': 'Czech Republic',
+    'Republic of Ireland': 'Ireland',
+    'North Ireland': 'United Kingdom',
+    'UK': 'United Kingdom',
+    'Faroe Islands': 'Denmark',
+    'The Gambia': 'Gambia',
+    'Gambia, The': 'Gambia',
+    'Greenland': 'Denmark',
+    'Channel Islands': 'United Kingdom', # channel islands were moved into UK
+    'Jersey': 'United Kingdom',
+    'Guernsey': 'United Kingdom',
+    'Cayman Islands': 'United Kingdom',
+    'Gibraltar': 'United Kingdom',
+    'Martinique': 'France',
+    'French Guiana': 'France',
+    'Mayotte': 'France',
+    'Reunion': 'France',
+    'Saint Barthelemy': 'France',
+    'Guadeloupe': 'France',
+    'St. Martin': 'France', # also netherlands apparently maybe perhaps?
+    'Saint Martin': 'France', # of course there are two names
+    'Vatican City': 'Italy', # this disappeared and idk where it went
+    'East Timor': 'Timor-Leste',
+    'Ivory Coast': "Cote d'Ivoire",
+    'Cape Verde': 'Cabo Verde'
+}
+
 # figure out columns
 def enum_cols():
     col_schema: Set[str] = set()
@@ -82,13 +135,10 @@ def read_file(file: str) -> pd.DataFrame:
     for col in RESULT_COLUMNS - set(data.columns):
         data.insert(len(data.columns), col, [None] * len(data))
     # generate timestamp_id column
-    data['timestamp_id'] = data['timestamp'].map(
-        lambda d: int(d.replace(
-            # take day only
-            hour=0, minute=0, second=0, microsecond=0,
-            tzinfo=datetime.timezone.utc
-        ).timestamp())
-    )
+    file_date = datetime.datetime.strptime(path.basename(file), '%m-%d-%Y.csv')
+    data['timestamp_id'] = [file_date.timestamp()] * len(data)
+    # map countries
+    data['country'] = data['country'].map(lambda x: COUNTRY_MAPPING[x] if x in COUNTRY_MAPPING else x)
 
     return data
 
@@ -101,7 +151,9 @@ def enum_countries():
         df = read_file(file)
         countries = np.union1d(countries, df.get('country').values)
     
-    print(countries)
+    countries_list = list(countries)
+    print(countries_list)
+    return countries_list
 
 def upload_database():
     connection = oracledb.connect(
@@ -110,40 +162,6 @@ def upload_database():
         dsn='oracle.cise.ufl.edu/orcl'
     )
     cursor = connection.cursor()
-    cursor.execute("""
-        create table covid_data (
-            timestamp date,
-            timestamp_id number,
-            admin2 varchar2(64),
-            state varchar2(64),
-            country varchar2(64),
-            latitude number,
-            longitude number,
-            confirmed number,
-            deaths number,
-            recovered number,
-            active number,
-            incidence number,
-            case_fatality_ratio number
-        )
-    """)
-    cursor.execute("""
-        create table covid_data_staging (
-            timestamp date,
-            timestamp_id number,
-            admin2 varchar2(64),
-            state varchar2(64),
-            country varchar2(64),
-            latitude number,
-            longitude number,
-            confirmed number,
-            deaths number,
-            recovered number,
-            active number,
-            incidence number,
-            case_fatality_ratio number
-        )
-    """)
     for file in data_files:
         print('read data', path.basename(file))
         data = read_file(file)
@@ -169,7 +187,7 @@ def upload_database():
         print('insert')
         try:
             cursor.executemany("""
-                insert into covid_data_staging
+                insert into covid_data
                     (timestamp, timestamp_id, admin2, state, country, latitude,
                     longitude, confirmed, deaths, recovered, active, incidence,
                     case_fatality_ratio)
@@ -183,37 +201,19 @@ def upload_database():
             print('offending file:', file)
             exit(1)
 
-        print('merge')
-        # pain
-        cursor.execute("""
-            merge into covid_data data
-            using covid_data_staging staging
-            on (
-                data.country = staging.country and
-                data.state = staging.state and
-                data.admin2 = staging.admin2 and
-                data.timestamp = staging.timestamp
-            )
-            when not matched then
-                insert
-                    (timestamp, timestamp_id, admin2, state, country, latitude,
-                    longitude, confirmed, deaths, recovered, active, incidence,
-                    case_fatality_ratio)
-                values
-                    (staging.timestamp, staging.timestamp_id, staging.admin2,
-                    staging.state, staging.country, staging.latitude,
-                    staging.longitude, staging.confirmed, staging.deaths,
-                    staging.recovered, staging.active, staging.incidence,
-                    staging.case_fatality_ratio)
-        """)
-        print('merged')
-        cursor.execute('delete from covid_data_staging')
-        cursor.execute('commit')
         print('commit')
+        cursor.execute('commit')
 
 upload_database()
 
+""" figure out which countries are bad
+all_countries = set(enum_countries())
+df = read_file('/mnt/datapool/prj/dbproject/data/COVID-19/csse_covid_19_data/csse_covid_19_daily_reports/01-14-2021.csv')
+final_countries = set(df['country'])
+print(all_countries - final_countries)
 """
+
+""" display entire file
 pd.set_option(
     'display.max_rows', None,
     'display.max_columns', None,
